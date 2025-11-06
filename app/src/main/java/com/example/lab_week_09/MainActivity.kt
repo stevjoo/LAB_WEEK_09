@@ -35,6 +35,10 @@ import com.example.lab_week_09.ui.theme.LAB_WEEK_09Theme
 import com.example.lab_week_09.ui.theme.OnBackgroundItemText
 import com.example.lab_week_09.ui.theme.OnBackgroundTitleText
 import com.example.lab_week_09.ui.theme.PrimaryTextButton
+import com.squareup.moshi.JsonAdapter
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,9 +66,9 @@ fun App(navController: NavHostController) {
         startDestination = "home"
     ) {
         composable("home") {
-            Home {
+            Home { listDataAsJsonString ->
                 navController.navigate(
-                    "resultContent/?listData=$it"
+                    "resultContent/?listData=$listDataAsJsonString"
                 )
             }
         }
@@ -72,10 +76,11 @@ fun App(navController: NavHostController) {
             "resultContent/?listData={listData}",
             arguments = listOf(navArgument("listData") {
                 type = NavType.StringType
+                nullable = true
             })
         ) {
             ResultContent(
-                it.arguments?.getString("listData").orEmpty()
+                listDataJson = it.arguments?.getString("listData").orEmpty()
             )
         }
     }
@@ -92,15 +97,31 @@ fun Home(navigateFromHomeToResult: (String) -> Unit) {
     }
     var inputField by remember { mutableStateOf(Student("")) }
 
+    val moshi = remember {
+        Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+    }
+    val listType = remember {
+        Types.newParameterizedType(List::class.java, Student::class.java)
+    }
+    val jsonAdapter: JsonAdapter<List<Student>> = remember {
+        moshi.adapter(listType)
+    }
+
+
     HomeContent(
         listData,
         inputField,
-        { input -> inputField = inputField.copy(input) },
+        { input -> inputField = inputField.copy(name = input) },
         {
-            listData.add(inputField)
-            inputField = inputField.copy("")
+            if (inputField.name.isNotBlank()) {
+                listData.add(inputField)
+                inputField = inputField.copy(name = "")
+            }
         },
-        { navigateFromHomeToResult(listData.toList().toString()) }
+        {
+            val jsonListString = jsonAdapter.toJson(listData.toList())
+            navigateFromHomeToResult(jsonListString)
+        }
     )
 }
 
@@ -166,17 +187,51 @@ fun HomeContent(
 }
 
 @Composable
-fun ResultContent(listData: String) {
-    Column(
+fun ResultContent(listDataJson: String) {
+    val moshi = remember {
+        Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+    }
+    val listType = remember {
+        Types.newParameterizedType(List::class.java, Student::class.java)
+    }
+    val jsonAdapter: JsonAdapter<List<Student>> = remember {
+        moshi.adapter(listType)
+    }
+
+    val studentList = remember(listDataJson) {
+        if (listDataJson.isNotBlank()) {
+            try {
+                jsonAdapter.fromJson(listDataJson)
+            } catch (e: Exception) {
+                emptyList<Student>()
+            }
+        } else {
+            emptyList<Student>()
+        }
+    }
+
+    LazyColumn(
         modifier = Modifier
-            .padding(vertical = 4.dp)
-            .fillMaxSize(),
+            .fillMaxSize()
+            .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        OnBackgroundItemText(text = listData)
+        item {
+            OnBackgroundTitleText(text = "Submitted Student List")
+        }
+
+        if (studentList.isNullOrEmpty()) {
+            item {
+                OnBackgroundItemText(text = "No data submitted.")
+            }
+        } else {
+            items(studentList) { student ->
+                OnBackgroundItemText(text = student.name)
+            }
+        }
     }
 }
 
 data class Student(
-    var name: String
+    val name: String
 )
